@@ -1,0 +1,210 @@
+﻿
+# Simple python script to generate blivhoert statistics (using python v2.75)
+# Peter Holm, Oeresundsgruppen
+
+# -*- coding: utf-8 -*-
+import datetime
+import urllib2
+import codecs
+import sys
+import os
+
+# Settings
+filename="index.html"
+hoeringsubdir="/hoering/"
+svarsubdir="/svar/"
+numpage=9 # TBD; make dynamic
+sep=";"
+
+# Codecs crap
+def charfix(str):
+    str = str.replace('æ',"ae")
+    str = str.replace('ø',"oe")
+    str = str.replace('å',"aa")
+    str = str.replace('Å',"AA")
+    str = str.replace('Ø','Oe')
+    str = str.replace("&amp;","&")
+    str = str.replace("&quot;","")
+    str = str.replace("é","e")
+    return str
+
+# Get hoerings from archive list
+def getlist(url):
+    data = urllib2.urlopen(url)
+    charset = data.headers.getparam('charset')
+    html = data.read() #.decode(charset)
+
+    svarstr = hoeringsubdir
+    titles = []
+    n = 0
+    i = html.find(svarstr)
+    while i > -1:
+        n = n + 1
+        html = html[i+1:]
+        j = html.find("\"")
+        if j > -1:
+            titles.append(html[len(svarstr)-1:j])
+        i = html.find(svarstr)
+
+    print 'Found ['+str(n)+'] links on page ['+url+']'
+    return titles
+
+# Get svars from hoeringspage
+def getpage(url):
+    data = urllib2.urlopen(url)
+    charset = data.headers.getparam('charset')
+    html = data.read() #.decode(charset)
+
+    headerstr = "Seneste h"
+    svarstr = svarsubdir
+    titlestr = "title"
+
+    i = html.find("<title>")
+    if i > -1:
+        j = html.find("</title>")
+        page = html[i+7:j]
+        j = page.find("| BLIV")
+        if j > 0: page = page[:j-1]
+
+    i = html.find("horings_type")
+    if i > -1:
+        j = html[i:].find("</div>")
+        if j > -1:
+            pagetype = html[i+2:i+j]
+            i = pagetype.find(">")
+            if i > -1: 
+                pagetype = pagetype[i+1:]
+                pagetype = pagetype.replace("type:","")
+
+    i = html.find("Bydel:")
+    if i > -1:
+        j = html[i:].find("</a>")
+        if j > -1:
+            bydel = html[i+1:i+j]
+            i = bydel.find("tag\">")
+            if i > -1: 
+                bydel = bydel[i+5:]
+
+    i = html.find(headerstr)
+    if i > -1:
+        html = html[i:]
+
+        # Count replies
+        i = html.find(svarstr)
+        n = 0
+        titles=[]
+        while i > -1:
+            n = n + 1
+            html = html[i+1:]
+            i = html.find(svarstr)
+      
+            # Collect names
+            j = html.find(titlestr)
+            if j > -1:
+                title = html[j+2+len(titlestr):50]
+                j = title.find("\"")
+                if j > -1:
+                    title = title[:j]                
+                titles.append(title)
+
+    # Codecs ack
+    page = page.strip()
+    page = charfix(page)
+    pagetype = charfix(pagetype)
+    bydel = charfix(bydel)
+
+    return (n,page,pagetype,bydel)
+
+# Query stats
+def getStats():
+    f=open(filename,"w")
+    k = 1
+    # Iterate over hoeringsarchive pages...
+    urlsearch = "http://www.blivhoert.kk.dk/hoeringsarkiv?field_hoeringstype_value_many_to_one=All&term_node_tid_depth=All&page=X"
+    for i in range(0,numpage):
+        url = urlsearch.replace("X", str(i))
+        hoerings = getlist(url)
+        for hoering in hoerings:
+            (n,page,pagetype,bydel) = getpage("http://www.blivhoert.kk.dk/hoering/"+hoering)
+            print str(k) +' [' + str(n) + '] replies on page [' + str(page) + '][' + pagetype + '][' + bydel + ']'
+            f.write(str(k)+sep+str(n)+sep+page+sep+pagetype+sep+bydel+'\n')
+            k = k + 1
+
+# Format simple web-page, no stylesheets
+def makeWebPage():
+    f=open(filename,"r")
+    lines=f.readlines()
+    f.close()
+
+    # Stats 
+    sum=0
+    for line in lines:
+        fields=line.split(";")
+        sum += int(fields[1])
+    avg = sum / len(lines)
+
+    h="<html xmlns='http://www.w3.org/1999/xhtml' xml:lang='da' lang='da'>"
+    h+="<meta http-equiv='Content-Type' content='text/html; charset=utf-8'/>"
+    h+="<center><img src='sammenombyen.jpg'></center>"
+    h+="<center><h2>Høringsrunder - Københavns Kommune - Statistik - <a href='http://www.blivhoert.kk.dk/'>BLIV HØRT portal</a></h2></center>"
+    h+="<center><b>Antal svar: "+str(sum)+" for "+str(len(lines))+" runder - Gennemsnit svar/runde: "+str(avg)+" - Sidst opdateret <i>" + str(datetime.datetime.now())[:19]+"</i></b></center>"
+    h+="<hr>"
+    h+="<center><table border=1><tr>"
+    h+="<th valign='center'>Nr</th>"
+    h+="<th valign='right'>#Svar</th>"
+    h+="<th valign='left'>Høringsnavn</th>"
+    h+="<th valign='left'>Type</th>"
+    h+="<th valign='left'>Område</th>"
+    h+="</tr>"
+
+    for line in lines:
+        fields=line.split(";")
+        h+="<tr>"
+        i=0
+        align="center"
+        for field in fields:
+            if i > 1: align="left"
+            h+="<td align="+align+">"+field+"</td>"
+            i+=1 
+        h+="</tr>"
+    h+="</table></center>"
+    h+="<hr>"
+    h+="<center>Generated by Øresundgruppen - 'Sammen om byen' - <a href='https://www.facebook.com/VetoModLokalPlanLergravsvej'>Facebook: Veto Mod LokalPlan Lergravsvej</a></center>"
+    h+="</html>"
+    f=open(filename,"w")
+    f.write(h)
+    f.close()
+
+# Publish'it
+def uploadPage():
+    os.system("git init")
+    os.system("git remote add origin https://github.com/oeresundsgruppen/blivhoert.git")
+    os.system("git checkout --orphan gh-pages")
+    os.system("git add "+filename)
+    os.system("git commit -m 'test'")
+    os.system("git push origin gh-pages")
+
+
+    return
+
+# Main
+if __name__ == '__main__':
+    if len(sys.argv) < 2:
+        print 'No args'
+        sys.exit()
+
+    if sys.argv[1] == "web":
+        print 'Generating web-page'
+        makeWebPage()
+
+    elif sys.argv[1] == "stats":
+        print 'Getting web-stats'
+        getStats()
+
+    elif sys.argv[1] == "upload":
+        print 'Uploading web-stats'
+        uploadPage()
+
+    elif sys.argv[1] == "all":
+        getStats()
+        makeWebPage()
