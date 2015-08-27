@@ -1,0 +1,98 @@
+
+
+<script src="http://www.nasdaqomxnordic.com/static/com-web-sources/nordic/2.4.6/js/topLoading-external.min.js"></script>
+<script src="http://www.nasdaqomxnordic.com/static/com-web-sources/nordic/2.4.6/js/topLoading.min.js"></script>
+<script src="http://www.nasdaqomxnordic.com/static/com-web-sources/nordic/2.4.6/js/bottomLoading-external.min.js"></script>
+<script src="bottomLoading.min.js"></script>  <!-- Local copy with full URL's to Nasdaq's ASP!! web services -->
+
+<iframe id="excelOutput" style="display: none;"></iframe><form id="excelForm" method="post" name="excelForm" target="excelOutput">
+<input id="excelQuery" name="xmlquery" type="hidden" value="" />
+</form>
+
+<script>
+	document.write("Nasdaq Downloader...");
+	try
+	{
+		var webCore = new Utils.WebCore("nasdaqomxnordicV2", false);
+	    var currentId = "SSE220" // NDA-SEK
+		var currentId = getUrlVars()["currentId"];
+	}
+	catch (e)
+	{
+		document.write("Exception: " + e.toString());
+	}
+
+	var from = webCore.getISODate(-1,0);
+	var to = webCore.getISODate();
+	
+	function getUrlVars() 
+	{
+    	var vars = {};
+    	var parts = window.location.href.replace(/[?&]+([^=&]+)=([^&]*)/gi,    
+    		function(m,key,value) {
+      		vars[key] = value;
+    	});
+    	return vars;
+  	}
+
+	var historical = 
+	{
+		name: "",
+		excel: function () 
+        {
+			document.write("<p>From: "+from);
+			document.write("<p>To: "+to);
+			document.write("<p>Instrument: "+currentId);
+
+            var xsltoptions = ",,";
+            if($("#showAdjusted").is(":checked")) 
+            {
+            	xsltoptions=",adjusted,";
+            }
+
+			//IG fix for dateformat yyyy-mm-dd, must match before sending.
+			if(to.match(/^\d{4}[-]\d{2}[-]\d{2}$/) && from.match(/^\d{4}[-]\d{2}[-]\d{2}$/)) 
+            {
+				try
+				{
+					var query = webCore.createQuery
+					( 
+						{
+			            	Exchange: "NMF",
+			                SubSystem: "History",
+                            Action: "GetDataSeries",
+                            AppendIntraDay: "no",
+                        }, 
+                        {}, 
+                        {
+							FromDate: from,
+							ToDate: to,
+							Instrument: currentId,
+							hi__a : "0,5,6,3,1,2,4,21,8,10,12,9,11",
+							OmitNoTrade: "true",
+							ext_xslt_lang: "en",
+							ext_xslt: "hi_csv.xsl",
+							ext_xslt_options: xsltoptions,
+							ext_contenttype : "application/ms-excel",
+							ext_contenttypefilename : "nasdaqomx.csv",
+							ext_xslt_hiddenattrs: ",iv,ip,",
+							ext_xslt_tableId: "historicalTable"
+						}
+					);
+
+					console.log("Query="+query);
+					$("#excelQuery").val(query);
+					console.log(webCore.getProxyURL("prod"))
+					$("#excelForm").attr("action", webCore.getProxyURL("prod")).submit();
+				}
+				catch (e)
+				{
+					document.write("Exception: " + e.toString());
+				}
+	  		}
+		}
+	};
+
+	// Do the download
+	historical.excel();
+</script>
